@@ -1,0 +1,4 @@
+pydantic
+PyYAML
+cx_Oracle
+python-ldap

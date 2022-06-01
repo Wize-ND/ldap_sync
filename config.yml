@@ -1,0 +1,45 @@
+oracle:
+    password: SecretStr
+    user: str
+    host: 192.168.70.204
+    port: 1521
+    sid: ORANGE
+    # either one of sid/service_name/tns_name
+    # service_name = service_name
+    # tns_name = tns_name
+
+#pg:
+#  password: SecretStr
+#  user: user
+#  host: host
+#  port: 123456
+#  database: database
+
+logging_level: DEBUG
+error_retry_interval: 60
+
+ldap:
+  sync_interval: 300
+  host: dc02.osinform.com
+  bind_dn: d.nechaev@osinform.com
+  password: Wize159753
+  base_user_dn: ou=orangesystem,dc=osinform,dc=com
+  filter_users: (&(objectCategory=Person)(sAMAccountName={})(!(userAccountControl:1.2.840.113556.1.4.803:=2)))
+  key: A!B!C
+  base_group_dn: ou=orangesystem,dc=osinform,dc=com
+  filter_groups: (objectCategory=Group)
+  user_attrs:
+    - sAMAccountName
+    - givenName
+    - sn
+    - displayName
+    - mail
+    - telephoneNumber
+    - mobile
+    - description
+    - department
+    - title
+    - physicalDeliveryOfficeName
+  group_attrs:
+    - description
+
