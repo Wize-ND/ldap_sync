@@ -4,7 +4,7 @@ import logging
 import sys
 import time
 import uuid
-
+from xml.dom import minidom
 import ldap.resiter
 from pydantic import ValidationError
 from config import Config
@@ -18,6 +18,18 @@ pp = pprint.PrettyPrinter(sort_dicts=False)
 
 class MyLDAPObject(ldap.ldapobject.LDAPObject, ldap.resiter.ResultProcessor):
     pass
+
+
+def to_xml(object_dict: dict):
+    root = minidom.Document()
+    xml = root.createElement('object')
+    root.appendChild(xml)
+    for k, v in object_dict.items():
+        child = root.createElement(k)
+        child.appendChild(root.createTextNode(v))
+        xml.appendChild(child)
+    # return root.toprettyxml(indent="\t", encoding='UTF-8').decode()
+    return root.toxml(encoding='UTF-8').decode()
 
 
 def generate_credentials(ldap_guid: str, key: str) -> tuple:
@@ -104,7 +116,9 @@ if __name__ == '__main__':
         log.debug(f'groups:\n{pp.pformat(groups)}')
         log.debug(f'persons:\n{pp.pformat(persons)}')
         log.info(f'search results: groups({len(groups)}), persons({len(persons)}), memberships({len(memberships)})')
+
         db = Database(driver='pg_driver' if cfg.pg else 'oracle_driver', cfg=cfg)  # type: Database
-        # todo save all in database
-        break
+        db.save_and_sync(groups=[to_xml(group) for _, group in groups.items()],
+                         persons=[to_xml(person) for person in persons],
+                         memberships=memberships)
         time.sleep(cfg.ldap.sync_interval)

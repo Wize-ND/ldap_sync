@@ -1,21 +1,21 @@
-oracle:
-    password: SecretStr
-    user: str
-    host: 192.168.70.204
-    port: 1521
-    sid: ORANGE
+#oracle:
+#    password: em_server_access
+#    user: em
+#    host: 192.168.70.204
+#    port: 1521
+#    sid: ORANGE
     # either one of sid/service_name/tns_name
     # service_name = service_name
     # tns_name = tns_name
 
-#pg:
-#  password: SecretStr
-#  user: user
-#  host: host
-#  port: 123456
-#  database: database
+pg:
+  host: 192.168.70.41
+  port: 49196
+  database: cep
+  user: cep
+  password: os_devel
 
-logging_level: DEBUG
+logging_level: INFO
 error_retry_interval: 60
 
 ldap:

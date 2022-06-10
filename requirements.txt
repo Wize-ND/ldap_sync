@@ -1,3 +1,4 @@
+psycopg2
 pydantic
 PyYAML
 cx_Oracle
