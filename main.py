@@ -40,6 +40,7 @@ def generate_credentials(ldap_guid: str, key: str) -> tuple:
 
 
 if __name__ == '__main__':
+    ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
     log = logging.getLogger()
     logging.basicConfig(format='%(asctime)s - %(levelname)s: %(message)s',
                         stream=sys.stdout,
@@ -56,10 +57,11 @@ if __name__ == '__main__':
         log.setLevel(cfg.logging_level)
         log.info('start')
         try:
-            ldap_conn = MyLDAPObject(f'ldap://{cfg.ldap.host}')
+            ldap_conn = MyLDAPObject(cfg.ldap.host)
             ldap_conn.set_option(ldap.OPT_REFERRALS, 0)
             ldap_conn.simple_bind_s(cfg.ldap.bind_dn, cfg.ldap.password)
         except ldap.LDAPError as e:
+            log.debug(e)
             err = e
             if len(e.args) > 0 and "desc" in e.args[0]:
                 err = e.args[0]["desc"]
@@ -112,13 +114,17 @@ if __name__ == '__main__':
                 else:
                     log.debug(f'person {dn} does not have memberships at all, skipping')
         ldap_conn.unbind_s()
-
-        log.debug(f'groups:\n{pp.pformat(groups)}')
-        log.debug(f'persons:\n{pp.pformat(persons)}')
+        groups_xmls = [to_xml(group) for _, group in groups.items()]
+        persons_xmls = [to_xml(person) for person in persons]
+        # log.debug(f'groups:\n{pp.pformat(groups)}')
+        log.debug(f'groups xml\'s:\n {groups_xmls}')
+        # log.debug(f'persons:\n{pp.pformat(persons)}')
+        log.debug(f'persons xml\'s:\n {persons_xmls}')
         log.info(f'search results: groups({len(groups)}), persons({len(persons)}), memberships({len(memberships)})')
 
         db = Database(driver='pg_driver' if cfg.pg else 'oracle_driver', cfg=cfg)  # type: Database
-        db.save_and_sync(groups=[to_xml(group) for _, group in groups.items()],
-                         persons=[to_xml(person) for person in persons],
+        db.save_and_sync(groups=groups_xmls,
+                         persons=persons_xmls,
                          memberships=memberships)
+        log.debug(f'waiting for {cfg.ldap.sync_interval}sec for next sync cycle')
         time.sleep(cfg.ldap.sync_interval)

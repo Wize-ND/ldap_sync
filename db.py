@@ -9,6 +9,7 @@ from config import DbConfigPg, DbConfigOracle, Config
 
 
 class Database:
+    log = logging.getLogger()
     _registry = {}
 
     def __init_subclass__(cls, driver: str):
@@ -42,32 +43,29 @@ class PgDatabase(Database, driver='pg_driver'):
                         cur.execute(self.groups_sql, (xml,))
                         result = cur.fetchone()[0]
                         if result != '(0,Success)':
-                            logging.getLogger().error(
-                                f'save group {xml} error: {result=}')
+                            self.log.error(f'save group {xml} error: {result=}')
 
                     for xml in persons:
                         cur.execute(self.persons_sql, (xml,))
                         result = cur.fetchone()[0]
                         if result != '(0,Success)':
-                            logging.getLogger().error(
-                                f'save person {xml} error: {result=}')
+                            self.log.error(f'save person {xml} error: {result=}')
 
                     for person_guid, group_guid in memberships:
                         cur.execute(self.memberships_sql, (person_guid, group_guid,))
                         result = cur.fetchone()[0]
                         if result != '(0,Success)':
-                            logging.getLogger().error(
-                                f'save membership {person_guid=} - {group_guid=} error: {result=}')
+                            self.log.error(f'save membership {person_guid=} - {group_guid=} error: {result=}')
 
                     cur.execute(self.run_sync_sql)
                     result = cur.fetchone()[0]
                     if result != '(0,Success)':
-                        logging.getLogger().error(f'run sync error: {result=}')
+                        self.log.error(f'run sync error: {result=}')
                     conn.commit()
-                logging.getLogger().info('sync success')
+                self.log.info('sync success')
         except psycopg2.Error as e:
             logging.exception(e)
-            logging.getLogger().error(f'save to database error: {e.pgerror} | code {e.pgcode}')
+            self.log.error(f'save to database error: {e.pgerror} | code {e.pgcode}')
 
 
 class OracleDatabase(Database, driver='oracle_driver'):
@@ -80,6 +78,13 @@ class OracleDatabase(Database, driver='oracle_driver'):
     def __init__(self, cfg: Config, **kwargs):
         self.cfg = cfg
 
+    def handle_database_error(self, e: cx_Oracle.DatabaseError, log_str):
+        logging.exception(e)
+        error, = e.args
+        msg = re.search(r'^ORA.\d+:\s(.*)', error.message)
+        msg = msg.group(1) if msg else error.message
+        self.log.error(f'{log_str} {msg}')
+
     def save(self, cur: cx_Oracle.Cursor, sql: str, items: list):
         if sql in [self.groups_sql, self.persons_sql]:
             target = 'group' if sql == self.groups_sql else 'person'
@@ -87,15 +92,13 @@ class OracleDatabase(Database, driver='oracle_driver'):
                 code = cur.var(int)
                 msg = cur.var(str)
                 try:
-                    cur.execute(self.groups_sql if target == 'groups' else self.persons_sql, xml=xml, code=code, msg=msg,
+                    cur.execute(sql, xml=xml, code=code, msg=msg,
                                 domain=self.cfg.ldap.domain)
+                    self.log.debug(f'save {target} {sql=} {xml=} | msg={msg.getvalue()} code={code.getvalue()}')
                     if code.getvalue() != 0:
-                        logging.getLogger().error(f'save {target} {xml} error: {msg.getvalue()}')
+                        self.log.error(f'save {target} {xml} error: {msg.getvalue()}')
                 except cx_Oracle.DatabaseError as e:
-                    error, = e.args
-                    msg = re.search(r'^ORA.\d+:\s(.*)', error.message)
-                    msg = msg.group(1) if msg else error.message
-                    logging.getLogger().error(f'save {target} {xml} error: {msg}')
+                    self.handle_database_error(e, f'save {target} {xml} error:')
         else:
             for person_guid, group_guid in items:
                 code = cur.var(int)
@@ -103,15 +106,12 @@ class OracleDatabase(Database, driver='oracle_driver'):
                 try:
                     cur.execute(self.memberships_sql, person_guid=person_guid, group_guid=group_guid, code=code, msg=msg,
                                 domain=self.cfg.ldap.domain)
+                    self.log.debug(f'save membership: {person_guid} <-> {group_guid} | msg={msg.getvalue()} code={code.getvalue()}')
                     if code.getvalue() != 0:
-                        logging.getLogger().error(
+                        self.log.error(
                             f'save membership  {person_guid=} - {group_guid=} error: {msg.getvalue()})')
                 except cx_Oracle.DatabaseError as e:
-                    logging.exception(e)
-                    error, = e.args
-                    msg = re.search(r'^ORA.\d+:\s(.*)', error.message)
-                    msg = msg.group(1) if msg else error.message
-                    logging.getLogger().error(f'save membership {person_guid=} - {group_guid=} error: {msg}')
+                    self.handle_database_error(e, f'save membership {person_guid=} - {group_guid=} error:')
 
     def save_and_sync(self, groups: list, persons: list, memberships: list):
         try:
@@ -119,19 +119,20 @@ class OracleDatabase(Database, driver='oracle_driver'):
                                    encoding='UTF-8') as conn:
                 conn.autocommit = False
                 with conn.cursor() as cur:
+                    self.log.debug(f'RUN {self.groups_sql}')
                     self.save(cur, self.groups_sql, groups)
+                    self.log.debug(f'RUN {self.persons_sql}')
                     self.save(cur, self.persons_sql, persons)
+                    self.log.debug(f'RUN {self.memberships_sql}')
                     self.save(cur, self.memberships_sql, memberships)
+                    conn.commit()
                     code = cur.var(int)
                     msg = cur.var(str)
                     cur.execute(self.run_sync_sql, code=code, msg=msg, domain=self.cfg.ldap.domain)
                     if code.getvalue() != 0:
-                        logging.getLogger().error(
+                        self.log.error(
                             f'run sync error: {msg.getvalue()} | (code={code.getvalue()})')
                     conn.commit()
-                logging.getLogger().info('sync success')
+                self.log.info('sync success')
         except cx_Oracle.DatabaseError as e:
-            error, = e.args
-            msg = re.search(r'^ORA.\d+:\s(.*)', error.message)
-            msg = msg.group(1) if msg else error.message
-            logging.getLogger().error(f'save to database error: {msg}')
+            self.handle_database_error(e, f'save to database error:')
