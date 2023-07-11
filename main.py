@@ -48,7 +48,7 @@ if __name__ == '__main__':
     log.info('starting sync main loop')
     while True:
         try:
-            cfg = Config.parse_obj(yaml.safe_load(open('config.yml')))  # type: Config
+            cfg = Config.model_validate(yaml.safe_load(open('config.yml')))  # type: Config
         except ValidationError as e:
             log.critical(f'Config load error: \n{e}\n retry in 60 sec.')
             time.sleep(60)
@@ -79,6 +79,8 @@ if __name__ == '__main__':
         groups = {}
         for res_type, res_data, res_msgid, res_controls in ldap_conn.allresults(groups_search):
             for dn, attrs in res_data:
+                if not dn:
+                    continue  # it's referral, skip
                 guid = uuid.UUID(bytes_le=attrs['objectGUID'][0])
                 groups[dn] = dict(dn=dn, objectGUID=str(guid).upper())
                 for attr in attrs:
@@ -90,6 +92,8 @@ if __name__ == '__main__':
         memberships = []
         for res_type, res_data, res_msgid, res_controls in ldap_conn.allresults(users_search):
             for dn, attrs in res_data:
+                if not dn:
+                    continue  # it's referral, skip
                 if 'memberOf' in attrs and attrs['memberOf']:
                     guid = uuid.UUID(bytes_le=attrs['objectGUID'][0])
                     in_group = False

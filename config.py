@@ -15,18 +15,18 @@ class LdapConfig(BaseModel):
     sync_interval: int
     user_attrs: List[str]
     group_attrs: List[str]
-    domain: Optional[str]
+    domain: str = None
 
 
 class DbConfigOracle(BaseModel):
     password: SecretStr
-    user: Optional[str]
-    host: Optional[str]
-    port: Optional[int]
-    sid: Optional[str]
-    service_name: Optional[str]
-    tns_name: Optional[str]
-    dsn: Any
+    user: str
+    host: str
+    port: int
+    sid: str = None
+    service_name: str = None
+    tns_name: str = None
+    dsn: Any = None
 
     @validator('dsn', always=True)
     def get_oracle_dsn(cls, v, values):
@@ -56,7 +56,7 @@ class DbConfigPg(BaseModel):
     host: str
     port: int
     database: str
-    dsn: Any
+    dsn: Any = None
 
     @validator('dsn', always=True)
     def get_pg_dsn(cls, v, values):
@@ -68,11 +68,11 @@ class DbConfigPg(BaseModel):
 
 class Config(BaseModel):
     logging_level: Literal['DEBUG', 'INFO'] = 'DEBUG'
-    oracle: Optional[DbConfigOracle]
-    pg: Optional[DbConfigPg]
+    oracle: DbConfigOracle = None
+    pg: DbConfigPg = None
     ldap: LdapConfig
     error_retry_interval: int = 60
-    check_db: Any
+    check_db: Any = None
 
     @validator('check_db', always=True)
     def check_single_db(cls, v, values):
