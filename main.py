@@ -5,7 +5,7 @@ import sys
 import time
 import uuid
 from xml.dom import minidom
-import ldap.resiter
+import ldap, ldap.resiter, ldap.controls
 from pydantic import ValidationError
 from config import Config
 import yaml
@@ -73,9 +73,7 @@ if __name__ == '__main__':
         groups_search = ldap_conn.search(base=cfg.ldap.base_group_dn, scope=ldap.SCOPE_SUBTREE,
                                          filterstr=cfg.ldap.filter_groups,
                                          attrlist=common_attrs + cfg.ldap.group_attrs)
-        users_search = ldap_conn.search(base=cfg.ldap.base_user_dn, scope=ldap.SCOPE_SUBTREE,
-                                        filterstr=cfg.ldap.filter_users.format('*'),
-                                        attrlist=common_attrs + cfg.ldap.user_attrs)
+
         groups = {}
         for res_type, res_data, res_msgid, res_controls in ldap_conn.allresults(groups_search):
             for dn, attrs in res_data:
@@ -88,9 +86,24 @@ if __name__ == '__main__':
                         continue
                     if attr and isinstance(attrs[attr], list):
                         groups[dn][attr] = attrs[attr][0].decode()
+
         persons = []
         memberships = []
-        for res_type, res_data, res_msgid, res_controls in ldap_conn.allresults(users_search):
+        pages = 0
+        page_control = ldap.controls.SimplePagedResultsControl(True, size=cfg.ldap.page_size, cookie='')
+        while True:
+            pages += 1
+            if pages > 999:
+                raise Exception('users search pages > 999 infinite loop')
+
+            users_search = ldap_conn.search_ext(base=cfg.ldap.base_user_dn, scope=ldap.SCOPE_SUBTREE,
+                                                filterstr=cfg.ldap.filter_users.format('*'),
+                                                attrlist=common_attrs + cfg.ldap.user_attrs, serverctrls=[page_control])
+
+            res_type, res_data, res_msgid, serverctrls = ldap_conn.result3(users_search)
+            controls = [control for control in serverctrls
+                        if control.controlType == ldap.controls.SimplePagedResultsControl.controlType]
+
             for dn, attrs in res_data:
                 if not dn:
                     continue  # it's referral, skip
@@ -117,6 +130,15 @@ if __name__ == '__main__':
                     persons.append(person)
                 else:
                     log.debug(f'person {dn} does not have memberships at all, skipping')
+
+            if not controls:
+                log.warning('The server ignores RFC 2696 control')
+                break
+            if not controls[0].cookie:  # end of pages
+                break
+            page_control.cookie = controls[0].cookie
+
+        log.debug(f'{pages=}')
         ldap_conn.unbind_s()
         groups_xmls = [to_xml(group) for _, group in groups.items()]
         persons_xmls = [to_xml(person) for person in persons]
@@ -127,8 +149,11 @@ if __name__ == '__main__':
         log.info(f'search results: groups({len(groups)}), persons({len(persons)}), memberships({len(memberships)})')
 
         db = Database(driver='pg_driver' if cfg.pg else 'oracle_driver', cfg=cfg)  # type: Database
-        db.save_and_sync(groups=groups_xmls,
-                         persons=persons_xmls,
-                         memberships=memberships)
+        if cfg.dbg_no_save:
+            log.info(f'{cfg.dbg_no_save=} results not saved!')
+        else:
+            db.save_and_sync(groups=groups_xmls,
+                             persons=persons_xmls,
+                             memberships=memberships)
         log.debug(f'waiting for {cfg.ldap.sync_interval}sec for next sync cycle')
         time.sleep(cfg.ldap.sync_interval)

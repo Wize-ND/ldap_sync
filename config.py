@@ -16,6 +16,7 @@ class LdapConfig(BaseModel):
     user_attrs: List[str]
     group_attrs: List[str]
     domain: str = None
+    page_size: int = 500
 
 
 class DbConfigOracle(BaseModel):
@@ -67,6 +68,7 @@ class DbConfigPg(BaseModel):
 
 
 class Config(BaseModel):
+    dbg_no_save: bool = False
     logging_level: Literal['DEBUG', 'INFO'] = 'DEBUG'
     oracle: DbConfigOracle = None
     pg: DbConfigPg = None
